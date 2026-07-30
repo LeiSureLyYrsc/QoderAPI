@@ -56,6 +56,10 @@ function isLoopbackHost(hostHeader: string | undefined): boolean {
   );
 }
 
+function isLoopbackBind(host: string): boolean {
+  return host === "127.0.0.1" || host === "localhost" || host === "::1";
+}
+
 function extractApiKey(req: http.IncomingMessage): string {
   const auth = req.headers.authorization;
   if (typeof auth === "string") {
@@ -104,23 +108,21 @@ function openUrl(url: string): void {
 
 export function startOpenAIServer(options: OpenAIServerOptions = {}): http.Server {
   const host = options.host || "127.0.0.1";
-  if (host !== "127.0.0.1" && host !== "localhost" && host !== "::1") {
-    throw new Error("Refusing non-loopback bind. Use 127.0.0.1 only.");
-  }
   const port = options.port ?? Number(process.env.PORT || 3927);
+  const loopbackOnly = isLoopbackBind(host);
   if (options.mode) setDefaultMode(resolveMode(options.mode));
   if (options.apiKey) updateSettings({ proxyApiKey: options.apiKey });
 
   const server = http.createServer(async (req, res) => {
     try {
-      if (!isLoopbackHost(req.headers.host)) {
+      if (loopbackOnly && !isLoopbackHost(req.headers.host)) {
         return sendJson(res, 403, {
           error: { message: "Host not allowed", type: "invalid_request_error" },
         });
       }
 
       const origin = req.headers.origin;
-      if (origin && origin !== "null") {
+      if (loopbackOnly && origin && origin !== "null") {
         try {
           const o = new URL(origin);
           if (!["localhost", "127.0.0.1", "[::1]", "::1"].includes(o.hostname)) {

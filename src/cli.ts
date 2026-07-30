@@ -37,8 +37,8 @@ Usage:
   qoder-reserve models [--mode cn|global|all]
   qoder-reserve usage [--mode cn|global|all]
   qoder-reserve chat [--model cn/auto|global/ultimate] [--stream] <prompt...>
-  qoder-reserve serve [--port 3927] [--api-key <key>] [--open]
-      WebUI: http://127.0.0.1:<port>/ui/
+  qoder-reserve serve [--host <address>] [--port 3927] [--api-key <key>] [--open]
+      WebUI: http://<host>:<port>/ui/
       Global Only Ultimate accounts only serve global/ultimate
 
 Env:
@@ -342,11 +342,15 @@ async function main(): Promise<void> {
     }
 
     case "serve": {
+      const host =
+        typeof flags.host === "string"
+          ? flags.host
+          : process.env.HOST || process.env.BIND_HOST || undefined;
       const port =
         typeof flags.port === "string" ? Number(flags.port) : Number(process.env.PORT || 3927);
       const apiKey = typeof flags["api-key"] === "string" ? flags["api-key"] : undefined;
       const openBrowser = Boolean(flags.open);
-      startOpenAIServer({ mode, port, apiKey, openBrowser });
+      startOpenAIServer({ host, mode, port, apiKey, openBrowser });
       return;
     }
 
