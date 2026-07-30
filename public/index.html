@@ -107,8 +107,11 @@
             <h3>号池列表</h3>
             <div class="row gap">
               <button type="button" class="btn ghost sm" id="btn-refresh-accounts">刷新</button>
+              <button type="button" class="btn ghost sm" id="btn-export-accounts">导出 JSON</button>
+              <button type="button" class="btn ghost sm" id="btn-import-accounts">导入 JSON</button>
               <button type="button" class="btn danger ghost sm" id="btn-logout-all">清空号池</button>
             </div>
+            <input type="file" id="import-file-input" accept=".json" class="hidden" />
           </div>
           <div class="table-wrap">
             <table>

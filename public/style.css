@@ -171,6 +171,7 @@ textarea { resize: vertical; min-height: 64px; }
 .sm { font-size: 12px; }
 .muted { color: var(--muted); }
 .hidden { display: none !important; }
+input[type="file"].hidden { position: absolute; width: 0; height: 0; opacity: 0; }
 
 .badge {
   font-size: 12px; padding: 4px 10px; border-radius: 999px;

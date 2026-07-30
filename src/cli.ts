@@ -9,6 +9,8 @@ import {
   removeAccount,
   updateAccount,
 } from "./auth/pool.js";
+import { accountsFilePath } from "./auth/paths.js";
+import fs from "node:fs";
 import { chat, chatStream } from "./api/chat.js";
 import { listModels } from "./api/models.js";
 import { getUsage } from "./api/usage.js";
@@ -25,6 +27,8 @@ Usage:
   qoder-reserve accounts add --mode cn|global --pat pt-... [--name x] [--tier pro|only_ultimate]
   qoder-reserve accounts set <id> --tier only_ultimate|--name x|--status active|disabled
   qoder-reserve accounts rm <id>
+  qoder-reserve accounts export [--file path] [--mask]
+  qoder-reserve accounts import --file path
   qoder-reserve login [--mode cn|global] [--pat pt-...] [--tier pro|only_ultimate]
       (adds a pool account)
   qoder-reserve logout [--mode cn|global] | --all
@@ -141,6 +145,61 @@ async function main(): Promise<void> {
           return;
         }
         console.log(JSON.stringify({ ok: true, id }, null, 2));
+        return;
+      }
+      if (sub === "export") {
+        const file = (typeof flags.file === "string" ? flags.file : undefined) || positional[1];
+        const mask = Boolean(flags.mask);
+        const raw = JSON.parse(fs.readFileSync(accountsFilePath(), "utf8")) as object[];
+        if (mask) {
+          for (const a of raw as Record<string, unknown>[]) {
+            if (a.access) a.access = (String(a.access)).slice(0, 4) + "***";
+            if (a.refresh) a.refresh = "***";
+            if (a.pat) a.pat = (String(a.pat)).slice(0, 6) + "***";
+          }
+        }
+        const json = JSON.stringify(raw, null, 2);
+        if (file) {
+          fs.writeFileSync(file, json, "utf8");
+          console.log(`Exported ${raw.length} accounts to ${file}${mask ? " (masked)" : ""}`);
+        } else {
+          console.log(json);
+        }
+        return;
+      }
+      if (sub === "import") {
+        const file = (typeof flags.file === "string" ? flags.file : undefined) || positional[1];
+        if (!file) {
+          console.error("accounts import --file <path>");
+          process.exitCode = 1;
+          return;
+        }
+        const raw = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>[];
+        if (!Array.isArray(raw) || !raw.length) {
+          console.error("file must be a non-empty JSON array of accounts");
+          process.exitCode = 1;
+          return;
+        }
+        // Merge: skip entries whose id already exists in pool
+        const existing = new Set(listAccounts().map((a) => a.id));
+        const merged: Record<string, unknown>[] = [];
+        for (const entry of raw) {
+          const id = String(entry.id || "");
+          if (id && existing.has(id)) {
+            console.error(`Skipping duplicate id: ${id.slice(0, 8)}…`);
+            continue;
+          }
+          merged.push(entry);
+        }
+        if (!merged.length) {
+          console.error("No new accounts to import (all ids already in pool)");
+          process.exitCode = 1;
+          return;
+        }
+        const current = JSON.parse(fs.readFileSync(accountsFilePath(), "utf8")) as object[];
+        current.push(...merged);
+        fs.writeFileSync(accountsFilePath(), JSON.stringify(current, null, 2), { encoding: "utf8", mode: 0o600 });
+        console.log(`Imported ${merged.length} accounts (pool now has ${current.length})`);
         return;
       }
       console.error(`Unknown accounts subcommand: ${sub}`);

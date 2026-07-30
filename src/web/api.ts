@@ -1,4 +1,5 @@
 import http from "node:http";
+import fs from "node:fs";
 import { login, loginToPool } from "../auth/login.js";
 import { runDeviceFlow } from "../auth/device.js";
 import { importOfficialCredentials } from "../auth/import-official.js";
@@ -14,7 +15,7 @@ import {
   updateAccount,
   accountToCredentials,
 } from "../auth/pool.js";
-import { configDir } from "../auth/paths.js";
+import { configDir, accountsFilePath } from "../auth/paths.js";
 import { chat, chatStream } from "../api/chat.js";
 import { listModels } from "../api/models.js";
 import { getUsage, getUsageAll } from "../api/usage.js";
@@ -275,7 +276,49 @@ export async function handleApi(
       return true;
     }
 
-    // POST /api/accounts/import
+    // GET /api/accounts/export?mask=true
+    if (method === "GET" && path === "/api/accounts/export") {
+      const mask = searchParams.get("mask") === "true" || searchParams.get("mask") === "1";
+      const raw = JSON.parse(fs.readFileSync(accountsFilePath(), "utf8")) as Record<string, unknown>[];
+      if (mask) {
+        for (const a of raw) {
+          if (a.access) a.access = (String(a.access)).slice(0, 4) + "***";
+          if (a.refresh) a.refresh = "***";
+          if (a.pat) a.pat = (String(a.pat)).slice(0, 6) + "***";
+        }
+      }
+      sendJson(res, 200, { accounts: raw, count: raw.length, masked: mask });
+      return true;
+    }
+
+    // POST /api/accounts/import (JSON file body)
+    if (method === "POST" && path === "/api/accounts/import") {
+      const body = await readJson(req);
+      const entries = Array.isArray(body.accounts) ? body.accounts : Array.isArray(body) ? body : null;
+      if (!entries || !entries.length) {
+        sendJson(res, 400, { error: "body must be { accounts: [...] } or a JSON array" });
+        return true;
+      }
+      const existing = new Set(listAccounts().map((a) => a.id));
+      const merged: Record<string, unknown>[] = [];
+      let skipped = 0;
+      for (const entry of entries as Record<string, unknown>[]) {
+        const id = String(entry.id || "");
+        if (id && existing.has(id)) { skipped++; continue; }
+        merged.push(entry);
+      }
+      if (!merged.length) {
+        sendJson(res, 400, { error: `No new accounts (${skipped} duplicates)` });
+        return true;
+      }
+      const current = JSON.parse(fs.readFileSync(accountsFilePath(), "utf8")) as object[];
+      current.push(...merged);
+      fs.writeFileSync(accountsFilePath(), JSON.stringify(current, null, 2), { encoding: "utf8", mode: 0o600 });
+      sendJson(res, 200, { ok: true, imported: merged.length, skipped, total: current.length });
+      return true;
+    }
+
+    // POST /api/accounts/import (official credentials)
     if (method === "POST" && path === "/api/accounts/import") {
       const body = await readJson(req);
       const mode = requireMode(body);

@@ -75,6 +75,8 @@
     "accounts-body",
     "btn-refresh-accounts",
     "btn-logout-all",
+    "btn-export-accounts",
+    "btn-import-accounts",
     "auth-misc-msg",
     "models-body",
     "models-title",
@@ -784,6 +786,42 @@
       await api("/api/auth/logout", { method: "POST", body: { all: true } });
       setMsg(els.authMiscMsg, "号池已清空", "ok");
       await refreshStatus();
+    });
+    els.btnExportAccounts.addEventListener("click", async function () {
+      try {
+        var data = await api("/api/accounts/export");
+        var blob = new Blob([JSON.stringify(data.accounts, null, 2)], { type: "application/json" });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = "qoder-reserve-accounts-" + new Date().toISOString().slice(0, 10) + ".json";
+        a.click();
+        URL.revokeObjectURL(url);
+        toast("已导出 " + data.count + " 个账号");
+      } catch (e) {
+        toast(e.message);
+      }
+    });
+    els.btnImportAccounts.addEventListener("click", function () {
+      var input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".json";
+      input.onchange = async function () {
+        var file = input.files && input.files[0];
+        if (!file) return;
+        try {
+          var text = await file.text();
+          var parsed = JSON.parse(text);
+          var accounts = Array.isArray(parsed) ? parsed : parsed.accounts;
+          if (!accounts || !accounts.length) throw new Error("No accounts in file");
+          var result = await api("/api/accounts/import", { method: "POST", body: { accounts: accounts } });
+          toast("导入 " + result.imported + " 个账号" + (result.skipped ? "，跳过 " + result.skipped + " 个重复" : ""));
+          await refreshStatus();
+        } catch (e) {
+          toast(e.message);
+        }
+      };
+      input.click();
     });
     els.accountsBody.addEventListener("change", async function (e) {
       var sel = e.target.closest("select[data-tier]");

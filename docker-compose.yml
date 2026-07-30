@@ -1,0 +1,18 @@
+services:
+  qoder-reserve:
+    image: ghcr.io/${GHCR_OWNER:-your-username}/qoder-reserve:latest
+    container_name: qoder-reserve
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3927}:3927"
+    environment:
+      - QODERCN_PERSONAL_ACCESS_TOKEN=${QODERCN_PERSONAL_ACCESS_TOKEN:-}
+      - QODER_PERSONAL_ACCESS_TOKEN=${QODER_PERSONAL_ACCESS_TOKEN:-}
+      - QODER_REGION=${QODER_REGION:-}
+      - PROXY_API_KEY=${PROXY_API_KEY:-}
+      - NO_BROWSER=${NO_BROWSER:-1}
+    volumes:
+      - qoder-data:/home/qoder/.qoder-reserve
+
+volumes:
+  qoder-data:
