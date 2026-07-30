@@ -27,5 +27,4 @@ tmp/
 test/
 scripts/
 opencode.json
-pnpm-workspace.yaml
 package-lock.json
