@@ -1,18 +1,25 @@
 services:
   qoder-reserve:
-    image: ghcr.io/${GHCR_OWNER:-your-username}/qoder-reserve:latest
+    image: ${GHCR_IMAGE:-ghcr.io/your-github-username/qoder-reserve}:${IMAGE_TAG:-latest}
     container_name: qoder-reserve
     restart: unless-stopped
     ports:
       - "${PORT:-3927}:3927"
     environment:
-      - QODERCN_PERSONAL_ACCESS_TOKEN=${QODERCN_PERSONAL_ACCESS_TOKEN:-}
-      - QODER_PERSONAL_ACCESS_TOKEN=${QODER_PERSONAL_ACCESS_TOKEN:-}
-      - QODER_REGION=${QODER_REGION:-}
-      - PROXY_API_KEY=${PROXY_API_KEY:-}
-      - NO_BROWSER=${NO_BROWSER:-1}
+      QODERCN_PERSONAL_ACCESS_TOKEN: ${QODERCN_PERSONAL_ACCESS_TOKEN:-}
+      QODER_PERSONAL_ACCESS_TOKEN: ${QODER_PERSONAL_ACCESS_TOKEN:-}
+      QODER_REGION: ${QODER_REGION:-}
+      PROXY_API_KEY: ${PROXY_API_KEY:-}
+      NO_BROWSER: ${NO_BROWSER:-1}
+      PORT: 3927
     volumes:
       - qoder-data:/home/qoder/.qoder-reserve
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3927/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 volumes:
   qoder-data:
