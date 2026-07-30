@@ -1,4 +1,4 @@
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
@@ -11,7 +11,7 @@ COPY tsconfig.json ./
 COPY src/ ./src/
 RUN pnpm run build
 
-FROM node:20-alpine
+FROM node:24-alpine
 
 RUN addgroup -S qoder && adduser -S qoder -G qoder
 
