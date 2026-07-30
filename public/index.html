@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Qoder Reserve</title>
+  <link rel="stylesheet" href="/ui/style.css" />
+</head>
+<body class="dark">
+  <div id="boot-error" class="toast hidden" style="left:18px;right:auto;background:#3f1d1d;border-color:#7f1d1d"></div>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">Q</span>
+      <div class="brand-text">
+        <strong>Qoder Reserve</strong>
+        <span class="muted">CN + Global 并行 · 无 CLI 依赖</span>
+      </div>
+    </div>
+    <div class="top-actions">
+      <span id="badge-cn" class="badge badge-off">CN · 未登录</span>
+      <span id="badge-global" class="badge badge-off">Global · 未登录</span>
+      <label class="mode-switch" title="仅影响无前缀模型 id 的回退">
+        <span class="muted">默认</span>
+        <select id="mode-select">
+          <option value="cn">CN</option>
+          <option value="global">Global</option>
+        </select>
+      </label>
+      <button id="theme-toggle" class="btn ghost" type="button" title="切换主题">◐</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <nav>
+        <button type="button" class="nav-item active" data-tab="dashboard">控制面板</button>
+        <button type="button" class="nav-item" data-tab="auth">账号登录</button>
+        <button type="button" class="nav-item" data-tab="models">模型</button>
+        <button type="button" class="nav-item" data-tab="usage">用量</button>
+        <button type="button" class="nav-item" data-tab="chat">对话</button>
+        <button type="button" class="nav-item" data-tab="proxy">OpenAI 代理</button>
+        <button type="button" class="nav-item" data-tab="settings">设置</button>
+      </nav>
+      <div class="sidebar-foot muted" id="sidebar-foot"></div>
+    </aside>
+
+    <main class="main">
+      <section id="dashboard" class="tab active">
+        <div class="page-header">
+          <h2>控制面板</h2>
+          <p class="muted">双站点并行：选模型即选站点（cn/… · global/…）</p>
+        </div>
+        <div class="grid cards" id="dashboard-cards"></div>
+        <div class="card mt">
+          <div class="card-head">
+            <h3>端点</h3>
+            <button type="button" class="btn ghost sm" id="btn-refresh-status">刷新</button>
+          </div>
+          <pre class="code" id="endpoints-pre">加载中…</pre>
+        </div>
+      </section>
+
+      <section id="auth" class="tab">
+        <div class="page-header">
+          <h2>账号号池</h2>
+          <p class="muted">CN / Global 多账号轮询；Global 可标记 Pro 或 Only Ultimate（仅 ultimate）</p>
+        </div>
+
+        <div class="card">
+          <h3>添加账号</h3>
+          <div class="row gap wrap" style="align-items:flex-end">
+            <label class="field inline">
+              <span>站点</span>
+              <select id="add-mode">
+                <option value="cn">CN</option>
+                <option value="global">Global</option>
+              </select>
+            </label>
+            <label class="field inline" id="add-tier-wrap">
+              <span>Global 类型</span>
+              <select id="add-tier">
+                <option value="pro">Pro（全部模型）</option>
+                <option value="only_ultimate">Only Ultimate</option>
+              </select>
+            </label>
+            <label class="field inline">
+              <span>名称</span>
+              <input id="add-name" type="text" placeholder="可选" style="width:120px" />
+            </label>
+            <label class="field inline" style="flex:1;min-width:180px">
+              <span>PAT</span>
+              <input id="add-pat" type="password" autocomplete="off" placeholder="pt-..." />
+            </label>
+            <button type="button" class="btn primary" id="btn-add-pat">PAT 加入号池</button>
+            <button type="button" class="btn" id="btn-add-device">浏览器登录加入</button>
+            <button type="button" class="btn ghost" id="btn-add-import">导入官方凭据</button>
+          </div>
+          <div id="add-device-box" class="device-box hidden">
+            <p class="muted sm" id="add-device-progress"></p>
+            <a href="#" target="_blank" rel="noopener" class="device-link" id="add-device-link"></a>
+          </div>
+          <p class="msg" id="add-msg"></p>
+        </div>
+
+        <div class="card mt">
+          <div class="card-head">
+            <h3>号池列表</h3>
+            <div class="row gap">
+              <button type="button" class="btn ghost sm" id="btn-refresh-accounts">刷新</button>
+              <button type="button" class="btn danger ghost sm" id="btn-logout-all">清空号池</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>名称</th>
+                  <th>站点</th>
+                  <th>类型</th>
+                  <th>状态</th>
+                  <th>用户</th>
+                  <th>过期</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="accounts-body">
+                <tr><td colspan="7" class="muted">加载中…</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="msg" id="auth-misc-msg"></p>
+          <p class="muted sm mt">Only Ultimate：只会在请求 <code>global/ultimate</code> 时被调度，不会调用 Auto/Lite 等 Pro 模型。</p>
+        </div>
+        <!-- legacy hook kept for script safety -->
+        <div id="auth-panels" class="hidden"></div>
+      </section>
+
+      <section id="models" class="tab">
+        <div class="page-header">
+          <h2>模型</h2>
+          <p class="muted">合并 CN + Global，公开 ID 带站点前缀</p>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <h3 id="models-title">模型列表</h3>
+            <div class="row gap">
+              <select id="models-filter">
+                <option value="all">全部</option>
+                <option value="cn">仅 CN</option>
+                <option value="global">仅 Global</option>
+              </select>
+              <button type="button" class="btn ghost sm" id="btn-refresh-models">刷新</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Region</th>
+                  <th>ID</th>
+                  <th>Key</th>
+                  <th>Context</th>
+                  <th>Reason</th>
+                  <th>Name</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="models-body">
+                <tr><td colspan="7" class="muted">加载中…</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="msg" id="models-msg"></p>
+        </div>
+      </section>
+
+      <section id="usage" class="tab">
+        <div class="page-header">
+          <h2>用量</h2>
+          <p class="muted">两端配额并排</p>
+        </div>
+        <div class="grid two" id="usage-panels"></div>
+        <p class="msg" id="usage-msg"></p>
+      </section>
+
+      <section id="chat" class="tab">
+        <div class="page-header">
+          <h2>对话</h2>
+          <p class="muted">模型 ID 决定站点，无需切换 region</p>
+        </div>
+        <div class="chat-layout">
+          <div class="card chat-main">
+            <div class="chat-toolbar">
+              <label class="field inline">
+                <span>模型</span>
+                <select id="chat-model"></select>
+              </label>
+              <label class="check">
+                <input type="checkbox" id="chat-stream" checked />
+                <span>流式</span>
+              </label>
+              <button type="button" class="btn ghost sm" id="btn-chat-clear">清空</button>
+            </div>
+            <label class="field">
+              <span>System（可选）</span>
+              <textarea id="chat-system" rows="2" placeholder="系统提示…"></textarea>
+            </label>
+            <div id="chat-log" class="chat-log"></div>
+            <div class="chat-input-row">
+              <textarea id="chat-input" rows="3" placeholder="输入消息，Ctrl+Enter 发送"></textarea>
+              <button type="button" class="btn primary" id="btn-chat-send">发送</button>
+            </div>
+            <p class="msg" id="chat-msg"></p>
+          </div>
+        </div>
+      </section>
+
+      <section id="proxy" class="tab">
+        <div class="page-header">
+          <h2>OpenAI 代理</h2>
+          <p class="muted">model 使用 cn/… 或 global/… 前缀即可路由</p>
+        </div>
+        <div class="card">
+          <div class="kv">
+            <div><span class="muted">Base URL</span><code id="proxy-base"></code></div>
+            <div><span class="muted">Models</span><code id="proxy-models"></code></div>
+            <div><span class="muted">Chat</span><code id="proxy-chat"></code></div>
+          </div>
+          <div class="row gap mt">
+            <button type="button" class="btn" id="btn-copy-base">复制 Base URL</button>
+            <button type="button" class="btn ghost" id="btn-probe-v1">探活 /v1/models</button>
+          </div>
+          <pre class="code mt" id="proxy-curl"></pre>
+          <p class="msg" id="proxy-msg"></p>
+        </div>
+      </section>
+
+      <section id="settings" class="tab">
+        <div class="page-header">
+          <h2>设置</h2>
+          <p class="muted">本机 UI 与代理选项</p>
+        </div>
+        <div class="card">
+          <label class="field">
+            <span>默认模型（建议带前缀）</span>
+            <input id="set-default-model" type="text" placeholder="cn/auto" />
+          </label>
+          <label class="field">
+            <span>PROXY_API_KEY（保护 /v1，可留空）</span>
+            <input id="set-api-key" type="password" autocomplete="off" placeholder="可选" />
+          </label>
+          <label class="field">
+            <span>主题</span>
+            <select id="set-theme">
+              <option value="dark">深色</option>
+              <option value="light">浅色</option>
+            </select>
+          </label>
+          <div class="row gap">
+            <button type="button" class="btn primary" id="btn-save-settings">保存</button>
+          </div>
+          <p class="muted sm mt">配置目录：<code id="set-config-dir">—</code></p>
+          <p class="msg" id="settings-msg"></p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/ui/app.js"></script>
+</body>
+</html>

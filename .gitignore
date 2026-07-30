@@ -1,0 +1,34 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+Thumbs.db
+data/
+auth.json
+.qoder-reserve/
+
+# TypeScript
+*.tsbuildinfo
+
+# Test coverage
+coverage/
+
+# pnpm
+.pnpm-store/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# npm pack
+*.tgz
+
+# Temp
+temp/
+tmp/
