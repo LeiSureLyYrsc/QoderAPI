@@ -38,6 +38,9 @@
     "cosy"
   ],
   "license": "MIT",
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  },
   "devDependencies": {
     "@types/node": "^22.15.0",
     "tsx": "^4.19.0",
