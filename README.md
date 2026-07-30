@@ -1,4 +1,4 @@
-# qoder-reserve
+# qoder-reserve1
 
 Standalone **Qoder CN / Global** API client with **multi-account pool**. No `qoderclicn` binary.
 
