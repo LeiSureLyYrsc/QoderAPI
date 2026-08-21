@@ -54,11 +54,12 @@ npx tsx src/cli.ts chat --mode cn --stream --model auto "hi"
 ### 3. WebUI + OpenAI proxy
 
 ```bash
-npx tsx src/cli.ts serve --mode cn --port 3927 --open
-# or: npm run ui
+pnpm dev
+# or: npm run dev
+# opens browser: npm run ui
 ```
 
-Open **http://127.0.0.1:3927/ui/** for the console:
+Starts the OpenAI-compatible proxy with default `HOST`/`PORT` (`127.0.0.1:3927`). Open **http://127.0.0.1:3927/ui/** for the console:
 
 - **CN + Global 并行**：两边可同时登录，不必先选 region
 - 模型 ID 带前缀：`cn/auto`、`global/lite` —— **选模型即选站点**

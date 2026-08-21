@@ -15,6 +15,7 @@ export {
   updateAccount,
   removeAccount,
   getNextAvailable,
+  getAccountForSession,
   poolSummary,
   publicAccount,
 } from "./auth/store.js";

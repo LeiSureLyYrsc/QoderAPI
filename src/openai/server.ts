@@ -1,4 +1,5 @@
 import http from "node:http";
+import type { IncomingHttpHeaders } from "node:http";
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { resolveMode } from "../config/endpoints.js";
@@ -10,6 +11,7 @@ import type {
   QoderMode,
   ToolDefinition,
 } from "../types.js";
+import { extractSessionKey } from "../session.js";
 import { handleApi } from "../web/api.js";
 import { tryServeStatic } from "../web/static.js";
 import {
@@ -71,11 +73,15 @@ function extractApiKey(req: http.IncomingMessage): string {
   return "";
 }
 
-function toChatRequest(body: Record<string, unknown>): ChatRequest {
+function toChatRequest(
+  body: Record<string, unknown>,
+  headers?: IncomingHttpHeaders
+): ChatRequest {
   const messages = (body.messages as ChatMessage[]) || [];
   const tools = body.tools as ToolDefinition[] | undefined;
+  const model = String(body.model || "cn/auto");
   return {
-    model: String(body.model || "cn/auto"),
+    model,
     messages,
     tools,
     maxTokens:
@@ -85,7 +91,7 @@ function toChatRequest(body: Record<string, unknown>): ChatRequest {
           ? Number(body.max_completion_tokens)
           : undefined,
     stream: Boolean(body.stream),
-    sessionId: body.session_id ? String(body.session_id) : undefined,
+    sessionId: extractSessionKey({ body, headers, messages, model }),
     temperature: body.temperature != null ? Number(body.temperature) : undefined,
     mode:
       typeof body.mode === "string" ? resolveMode(body.mode) : undefined,
@@ -216,7 +222,7 @@ export function startOpenAIServer(options: OpenAIServerOptions = {}): http.Serve
       ) {
         const raw = await readBody(req);
         const body = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
-        const chatReq = toChatRequest(body);
+        const chatReq = toChatRequest(body, req.headers);
 
         if (chatReq.stream) {
           res.writeHead(200, {

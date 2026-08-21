@@ -12,8 +12,68 @@ import type { ModelRoute } from "../config/routing.js";
 import { accountsFilePath, authFilePath, ensureConfigDir } from "./paths.js";
 
 const RATE_LIMIT_MS = 60_000;
+const SESSION_TTL_MS = 60 * 60 * 1000;
 
 let rrIndex = 0;
+
+export interface SessionBind {
+  accountId: string;
+  upstreamSessionId: string;
+}
+
+const sessionBinds = new Map<
+  string,
+  { accountId: string; upstreamSessionId: string; expiresAt: number }
+>();
+
+function gcSessionBinds(now = Date.now()): void {
+  for (const [key, bind] of sessionBinds) {
+    if (bind.expiresAt <= now) sessionBinds.delete(key);
+  }
+}
+
+export function getSessionBind(sessionKey: string | undefined): SessionBind | null {
+  if (!sessionKey) return null;
+  gcSessionBinds();
+  const hit = sessionBinds.get(sessionKey);
+  if (!hit) return null;
+  if (hit.expiresAt <= Date.now()) {
+    sessionBinds.delete(sessionKey);
+    return null;
+  }
+  return { accountId: hit.accountId, upstreamSessionId: hit.upstreamSessionId };
+}
+
+export function bindSession(
+  sessionKey: string,
+  accountId: string,
+  upstreamSessionId?: string
+): SessionBind {
+  const existing = sessionBinds.get(sessionKey);
+  const id = upstreamSessionId || existing?.upstreamSessionId || sessionKey;
+  sessionBinds.set(sessionKey, {
+    accountId,
+    upstreamSessionId: id,
+    expiresAt: Date.now() + SESSION_TTL_MS,
+  });
+  return { accountId, upstreamSessionId: id };
+}
+
+export function clearSessionBind(sessionKey: string | undefined): void {
+  if (!sessionKey) return;
+  sessionBinds.delete(sessionKey);
+}
+
+export function clearSessionBindsForAccount(accountId: string): void {
+  for (const [key, bind] of sessionBinds) {
+    if (bind.accountId === accountId) sessionBinds.delete(key);
+  }
+}
+
+/** Test helper — drop in-memory session stickiness. */
+export function resetSessionBinds(): void {
+  sessionBinds.clear();
+}
 /** Track which config dirs already ran migration. */
 const migratedDirs = new Set<string>();
 
@@ -346,6 +406,39 @@ export function getNextAvailable(route: ModelRoute): PoolAccount | null {
   return getAccount(picked.id);
 }
 
+/**
+ * Sticky account for a client session. Reuses the bound account while it can
+ * still serve the route; otherwise round-robins and rebinds.
+ */
+export function getAccountForSession(
+  route: ModelRoute,
+  sessionKey?: string,
+  tried?: Set<string>
+): PoolAccount | null {
+  if (sessionKey) {
+    const bind = getSessionBind(sessionKey);
+    if (bind && !tried?.has(bind.accountId)) {
+      const acc = getAccount(bind.accountId);
+      if (acc && canServeModel(acc, route)) {
+        bindSession(sessionKey, acc.id, bind.upstreamSessionId);
+        return acc;
+      }
+    }
+    if (bind) clearSessionBind(sessionKey);
+  }
+
+  const available = getAvailableAccounts(route).filter(
+    (a) => !tried?.has(a.id)
+  );
+  if (!available.length) return null;
+  rrIndex = (rrIndex + 1) % available.length;
+  const picked = available[rrIndex]!;
+  updateAccount(picked.id, { lastUsedAt: Date.now() });
+  const acc = getAccount(picked.id);
+  if (acc && sessionKey) bindSession(sessionKey, acc.id);
+  return acc;
+}
+
 export function reportError(id: string, type: PoolErrorType): PoolAccount | null {
   const accounts = loadRaw();
   const idx = accounts.findIndex((a) => a.id === id);
@@ -364,6 +457,7 @@ export function reportError(id: string, type: PoolErrorType): PoolAccount | null
   }
   accounts[idx] = acc;
   saveRaw(accounts);
+  clearSessionBindsForAccount(id);
   return acc;
 }
 

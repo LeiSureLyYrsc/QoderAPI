@@ -21,7 +21,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev": "tsx src/cli.ts",
+    "dev": "tsx src/cli.ts serve",
     "start": "node dist/cli.js",
     "ui": "tsx src/cli.ts serve --open",
     "test": "tsx --test test/**/*.test.ts",

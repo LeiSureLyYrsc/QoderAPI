@@ -17,6 +17,7 @@ import {
 } from "../auth/pool.js";
 import { configDir, accountsFilePath } from "../auth/paths.js";
 import { chat, chatStream } from "../api/chat.js";
+import { extractSessionKey } from "../session.js";
 import { listModels } from "../api/models.js";
 import { getUsage, getUsageAll } from "../api/usage.js";
 import { patSettingsUrl, resolveMode, urls } from "../config/endpoints.js";
@@ -76,10 +77,15 @@ function parseTier(v: unknown): GlobalTier | undefined {
   return "pro";
 }
 
-function toChatRequest(body: Record<string, unknown>): ChatRequest {
+function toChatRequest(
+  body: Record<string, unknown>,
+  headers?: http.IncomingHttpHeaders
+): ChatRequest {
+  const messages = (body.messages as ChatMessage[]) || [];
+  const model = String(body.model || getSettings().defaultModel || "cn/auto");
   return {
-    model: String(body.model || getSettings().defaultModel || "cn/auto"),
-    messages: (body.messages as ChatMessage[]) || [],
+    model,
+    messages,
     tools: body.tools as ToolDefinition[] | undefined,
     maxTokens:
       body.max_tokens != null
@@ -88,11 +94,7 @@ function toChatRequest(body: Record<string, unknown>): ChatRequest {
           ? Number(body.maxTokens)
           : undefined,
     stream: body.stream !== false,
-    sessionId: body.session_id
-      ? String(body.session_id)
-      : body.sessionId
-        ? String(body.sessionId)
-        : undefined,
+    sessionId: extractSessionKey({ body, headers, messages, model }),
     mode:
       typeof body.mode === "string" && body.mode !== "all"
         ? resolveMode(body.mode)
@@ -555,7 +557,7 @@ export async function handleApi(
 
     if (method === "POST" && path === "/api/chat") {
       const body = await readJson(req);
-      const chatReq = toChatRequest(body);
+      const chatReq = toChatRequest(body, req.headers);
       const stream = body.stream !== false;
       const defaultMode = getDefaultMode();
       const accountId =

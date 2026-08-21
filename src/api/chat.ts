@@ -109,9 +109,7 @@ function buildRequestBody(
     `mt=${maxTokens}`
   );
   const sessionPart = stableHash("qoder-session", creds.userID, qoderModel);
-  const sessionID = req.sessionId
-    ? `${sessionPart}-${req.sessionId}`
-    : `${sessionPart}-${crypto.randomUUID()}`;
+  const sessionID = `${sessionPart}-${req.sessionId || crypto.randomUUID()}`;
 
   return {
     request_id: crypto.randomUUID(),
@@ -370,10 +368,12 @@ export async function* chatStream(
 ): AsyncGenerator<ChatStreamEvent> {
   const {
     accountToCredentials,
+    bindSession,
     classifyProviderError,
     countAvailable,
     getAccount,
-    getNextAvailable,
+    getAccountForSession,
+    getSessionBind,
     reportError,
   } = await import("../auth/pool.js");
   const { ensureFreshCredentials } = await import("./client.js");
@@ -388,6 +388,7 @@ export async function* chatStream(
   const modelConfig = getModelConfig(route.publicId, models, mode);
   modelConfig.key = route.key;
 
+  const sessionKey = req.sessionId;
   const tried = new Set<string>();
   const maxAttempts = options?.credentials
     ? 1
@@ -409,35 +410,35 @@ export async function* chatStream(
         creds = accountToCredentials(acc);
         accountId = acc.id;
       } else {
-        const acc = getNextAvailable(route);
-        if (!acc || tried.has(acc.id)) {
-          // try any remaining
-          const { getAvailableAccounts } = await import("../auth/pool.js");
-          const left = getAvailableAccounts(route).filter((a) => !tried.has(a.id));
-          const pick = left[0];
-          if (!pick) {
-            lastError =
-              lastError ||
-              `No active account for ${route.publicId}` +
-                (route.mode === "global"
-                  ? " (Only Ultimate accounts only serve global/ultimate)"
-                  : "");
-            break;
-          }
-          creds = accountToCredentials(pick);
-          accountId = pick.id;
-        } else {
-          creds = accountToCredentials(acc);
-          accountId = acc.id;
+        const acc = getAccountForSession(route, sessionKey, tried);
+        if (!acc) {
+          lastError =
+            lastError ||
+            `No active account for ${route.publicId}` +
+              (route.mode === "global"
+                ? " (Only Ultimate accounts only serve global/ultimate)"
+                : "");
+          break;
         }
+        creds = accountToCredentials(acc);
+        accountId = acc.id;
       }
     }
 
     if (accountId) tried.add(accountId);
     creds = await ensureFreshCredentials(creds);
 
+    const sticky = sessionKey ? getSessionBind(sessionKey) : null;
+    const upstreamSessionId =
+      sticky && sticky.accountId === accountId
+        ? sticky.upstreamSessionId
+        : sessionKey || crypto.randomUUID();
+    if (sessionKey && accountId) {
+      bindSession(sessionKey, accountId, upstreamSessionId);
+    }
+
     const body = buildRequestBody(
-      { ...req, model: route.bareId },
+      { ...req, model: route.bareId, sessionId: upstreamSessionId },
       mode,
       creds,
       modelConfig

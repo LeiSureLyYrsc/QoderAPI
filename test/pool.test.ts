@@ -7,12 +7,16 @@ import {
   addAccount,
   canServeModel,
   countAvailable,
+  getAccountForSession,
   getNextAvailable,
+  getSessionBind,
   isUltimateModel,
   listAccounts,
   reportError,
+  resetSessionBinds,
   updateAccount,
 } from "../src/auth/pool.ts";
+import { extractSessionKey } from "../src/session.ts";
 import type { QoderCredentials } from "../src/types.ts";
 import { resolveModelRoute } from "../src/config/routing.ts";
 
@@ -38,6 +42,7 @@ describe("pool ultimate filter", () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), "qr-pool-"));
     prev = process.env.QODER_RESERVE_CONFIG_DIR;
     process.env.QODER_RESERVE_CONFIG_DIR = dir;
+    resetSessionBinds();
     // reset module migration flag by writing empty accounts
     fs.writeFileSync(path.join(dir, "accounts.json"), "[]");
   });
@@ -110,5 +115,80 @@ describe("pool ultimate filter", () => {
     addAccount({ mode: "cn", credentials: creds("cn", "a") });
     addAccount({ mode: "cn", credentials: creds("cn", "b") });
     assert.equal(listAccounts().filter((x) => x.mode === "cn").length, 2);
+  });
+
+  it("getAccountForSession sticks to the same account", () => {
+    addAccount({ mode: "cn", credentials: creds("cn", "s1"), name: "s1" });
+    addAccount({ mode: "cn", credentials: creds("cn", "s2"), name: "s2" });
+    const route = resolveModelRoute("cn/auto");
+    const first = getAccountForSession(route, "sess-a");
+    const second = getAccountForSession(route, "sess-a");
+    assert.ok(first);
+    assert.ok(second);
+    assert.equal(second!.id, first!.id);
+    assert.equal(getSessionBind("sess-a")?.accountId, first!.id);
+  });
+
+  it("different sessions can round-robin to different accounts", () => {
+    addAccount({ mode: "cn", credentials: creds("cn", "d1"), name: "d1" });
+    addAccount({ mode: "cn", credentials: creds("cn", "d2"), name: "d2" });
+    const route = resolveModelRoute("cn/auto");
+    const a = getAccountForSession(route, "sess-1");
+    const b = getAccountForSession(route, "sess-2");
+    assert.ok(a);
+    assert.ok(b);
+    assert.notEqual(a!.id, b!.id);
+  });
+
+  it("reportError unbinds the session so it can fail over", () => {
+    const a = addAccount({ mode: "cn", credentials: creds("cn", "f1"), name: "f1" });
+    addAccount({ mode: "cn", credentials: creds("cn", "f2"), name: "f2" });
+    const route = resolveModelRoute("cn/auto");
+    const first = getAccountForSession(route, "sess-fail");
+    assert.ok(first);
+    reportError(first!.id, "rate_limit");
+    const next = getAccountForSession(route, "sess-fail");
+    assert.ok(next);
+    assert.notEqual(next!.id, first!.id);
+    assert.notEqual(next!.id, a.id === first!.id ? a.id : undefined);
+  });
+});
+
+describe("extractSessionKey", () => {
+  it("prefers body.session_id then headers then prompt hash", () => {
+    assert.equal(
+      extractSessionKey({
+        body: { session_id: "from-body", model: "cn/auto" },
+      }),
+      "from-body"
+    );
+    assert.equal(
+      extractSessionKey({
+        body: { metadata: { sessionId: "from-meta" }, model: "cn/auto" },
+      }),
+      "from-meta"
+    );
+    assert.equal(
+      extractSessionKey({
+        body: { model: "cn/auto" },
+        headers: { "x-session-id": "from-header" },
+      }),
+      "from-header"
+    );
+    const a = extractSessionKey({
+      body: { model: "cn/auto" },
+      messages: [{ role: "user", content: "hello sticky" }],
+    });
+    const b = extractSessionKey({
+      body: { model: "cn/auto" },
+      messages: [{ role: "user", content: "hello sticky" }],
+    });
+    const c = extractSessionKey({
+      body: { model: "cn/auto" },
+      messages: [{ role: "user", content: "other prompt" }],
+    });
+    assert.match(a, /^auto:/);
+    assert.equal(a, b);
+    assert.notEqual(a, c);
   });
 });
