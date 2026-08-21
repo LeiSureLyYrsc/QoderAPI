@@ -25,10 +25,12 @@ const PREFIX_RE =
 /** CN-only bare ids (not typically on global). */
 const CN_ONLY = new Set([
   "qoder-cn",
+  "qwen3.7-flash",
   "qwen3.6-flash",
   "q36fmodel",
   "qfmodel",
   "minimax-m2.7",
+  "glm-5.3",
 ]);
 
 /** Global-only bare ids (not typically on CN). */
@@ -84,9 +86,11 @@ export function gatewayKeyFor(bareId: string, mode: QoderMode): string {
     "minimax-m3": "mmodel",
     "qwen3.7-plus": "qmodel",
     "qwen3.7-max": "qmodel_latest",
+    "qwen3.8-max": "qmodel_preview",
     "qwen3.8-max-preview": "qmodel_preview",
     "deepseek-v4-pro": "dmodel",
     "deepseek-v4-flash": "dfmodel",
+    "glm-5.3": "gm53model",
     "glm-5.2": "gm51model",
     "kimi-k2.7-code": "kmodel",
     "kimi-k2.6": "kmodel",

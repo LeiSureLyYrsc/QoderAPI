@@ -55,8 +55,8 @@ function staticModels(mode: QoderMode): ModelInfo[] {
               : 1000000,
         maxTokens: 32768,
         reasoning: !["dfmodel", "mmodel"].includes(key),
-        supportsEffort: ["qmodel_latest", "qmodel_preview"].includes(key),
-        input: ["dfmodel", "mmodel", "qmodel", "q36fmodel"].includes(key)
+        supportsEffort: ["qmodel_preview", "qmodel_latest"].includes(key),
+        input: ["dfmodel", "mmodel", "qmodel", "qfmodel", "q36fmodel"].includes(key)
           ? ["text"]
           : ["text", "image"],
       })

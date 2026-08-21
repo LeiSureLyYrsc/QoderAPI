@@ -50,6 +50,10 @@ describe("resolveModelRoute", () => {
   it("infers CN-only bare ids", () => {
     const r = resolveModelRoute("qwen3.6-flash", { defaultMode: "global" });
     assert.equal(r.mode, "cn");
+    const r2 = resolveModelRoute("qwen3.7-flash", { defaultMode: "global" });
+    assert.equal(r2.mode, "cn");
+    const r3 = resolveModelRoute("glm-5.3", { defaultMode: "global" });
+    assert.equal(r3.mode, "cn");
   });
 
   it("infers Global-only bare ids", () => {
