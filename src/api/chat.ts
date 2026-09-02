@@ -13,7 +13,12 @@ import type {
 } from "../types.js";
 import { qoderFetch } from "./client.js";
 import { getModelConfig, listModels } from "./models.js";
-import { normalizeConversation } from "./messages.js";
+import {
+  conversationHasTools,
+  normalizeConversation,
+  summarizeMessages,
+} from "./messages.js";
+import { isDebug, logChat, logDebug } from "../log.js";
 
 function transformTools(tools?: ToolDefinition[]): unknown[] {
   if (!tools?.length) return [];
@@ -42,6 +47,8 @@ function buildRequestBody(
   creds: QoderCredentials,
   modelConfig: { key: string; is_reasoning: boolean; max_output_tokens: number; source: string }
 ): Record<string, unknown> {
+  const inbound = summarizeMessages(req.messages || []);
+  const hasTools = conversationHasTools(req.messages || []);
   const normalized = normalizeConversation(req.messages);
   const systemParts = normalized.filter((m) => m.role === "system");
   const rest = normalized.filter((m) => m.role !== "system");
@@ -64,15 +71,23 @@ function buildRequestBody(
   if (req.maxTokens && req.maxTokens < maxTokens) maxTokens = req.maxTokens;
 
   const toolsRaw = transformTools(req.tools);
-  const recordID = stableHash(
-    "qoder-record",
-    qoderModel,
-    JSON.stringify(messages),
-    JSON.stringify(toolsRaw),
-    `mt=${maxTokens}`
-  );
+  const recordID = crypto.randomUUID();
   const sessionPart = stableHash("qoder-session", creds.userID, qoderModel);
-  const sessionID = `${sessionPart}-${req.sessionId || crypto.randomUUID()}`;
+  // Tool turns send a self-contained history. Reusing Qoder's session_id would
+  // merge this role:tool payload onto a stored assistant that has no tool_calls.
+  const sessionID = hasTools
+    ? `${sessionPart}-${crypto.randomUUID()}`
+    : `${sessionPart}-${req.sessionId || crypto.randomUUID()}`;
+
+  logChat(
+    `inbound ${inbound}`
+  );
+  logChat(
+    `outbound model=${qoderModel} hasTools=${hasTools} is_reply=${!hasTools} session=${sessionID} ${summarizeMessages(messages)}`
+  );
+  if (isDebug()) {
+    logDebug(`outbound messages=${JSON.stringify(messages).slice(0, 4000)}`);
+  }
 
   return {
     request_id: crypto.randomUUID(),
@@ -81,7 +96,7 @@ function buildRequestBody(
     session_id: sessionID,
     stream: true,
     chat_task: "FREE_INPUT",
-    is_reply: true,
+    is_reply: !hasTools,
     is_retry: false,
     source: 1,
     version: "3",
@@ -392,12 +407,16 @@ export async function* chatStream(
     creds = await ensureFreshCredentials(creds);
 
     const sticky = sessionKey ? getSessionBind(sessionKey) : null;
-    const upstreamSessionId =
-      sticky && sticky.accountId === accountId
+    const hasTools = conversationHasTools(req.messages || []);
+    const upstreamSessionId = hasTools
+      ? crypto.randomUUID()
+      : sticky && sticky.accountId === accountId
         ? sticky.upstreamSessionId
         : sessionKey || crypto.randomUUID();
-    if (sessionKey && accountId) {
+    if (sessionKey && accountId && !hasTools) {
       bindSession(sessionKey, accountId, upstreamSessionId);
+    } else if (sessionKey && accountId && sticky?.accountId !== accountId) {
+      bindSession(sessionKey, accountId, sticky?.upstreamSessionId);
     }
 
     const body = buildRequestBody(

@@ -57,3 +57,8 @@ export function maskSecret(value: string | undefined | null, keep = 6): string {
   if (s.length <= keep) return `${s[0] || ""}***`;
   return `${s.slice(0, keep)}…`;
 }
+
+/** Always-on chat-path tracing; more detail when QODER_DEBUG=1. */
+export function logChat(...args: unknown[]): void {
+  write("chat", args);
+}

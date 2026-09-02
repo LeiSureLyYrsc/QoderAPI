@@ -12,6 +12,8 @@ import type {
   ToolDefinition,
 } from "../types.js";
 import { extractSessionKey } from "../session.js";
+import { conversationHasTools, summarizeMessages } from "../api/messages.js";
+import { logChat } from "../log.js";
 import { handleApi } from "../web/api.js";
 import { tryServeStatic } from "../web/static.js";
 import {
@@ -223,6 +225,9 @@ export function startOpenAIServer(options: OpenAIServerOptions = {}): http.Serve
         const raw = await readBody(req);
         const body = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
         const chatReq = toChatRequest(body, req.headers);
+        logChat(
+          `openai ${pathNoTrail} model=${chatReq.model} stream=${chatReq.stream} tools=${conversationHasTools(chatReq.messages)} ${summarizeMessages(chatReq.messages)}`
+        );
 
         if (chatReq.stream) {
           res.writeHead(200, {

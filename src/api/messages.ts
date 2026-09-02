@@ -2,7 +2,7 @@ import type { ChatMessage, ToolCall } from "../types.js";
 
 export type UpstreamMessage = {
   role: string;
-  content: string | null;
+  content: string;
   tool_call_id?: string;
   tool_calls?: ToolCall[];
   name?: string;
@@ -225,7 +225,7 @@ function expandOne(m: LooseMessage): UpstreamMessage[] {
   if (role === "assistant") {
     const msg: UpstreamMessage = {
       role: "assistant",
-      content: text || null,
+      content: text,
     };
     if (toolCalls.length) msg.tool_calls = toolCalls;
     out.push(msg);
@@ -239,7 +239,7 @@ function expandOne(m: LooseMessage): UpstreamMessage[] {
   if (toolCalls.length) {
     out.push({
       role: "assistant",
-      content: null,
+      content: "",
       tool_calls: toolCalls,
     });
   }
@@ -293,7 +293,7 @@ function repairToolSequence(messages: UpstreamMessage[]): UpstreamMessage[] {
     if (!adjacentWithCalls) {
       out.push({
         role: "assistant",
-        content: null,
+        content: "",
         tool_calls: synthToolCalls(group),
       });
     } else if (missing.length && prev) {
@@ -324,6 +324,57 @@ function assertToolFollowsCalls(messages: UpstreamMessage[]): void {
       throw new Error("internal: tool message is not adjacent to assistant tool_calls");
     }
   }
+}
+
+export function summarizeMessages(
+  messages: Array<{
+    role?: string;
+    content?: unknown;
+    tool_call_id?: string;
+    tool_calls?: Array<{ id?: string; function?: { name?: string } }>;
+  }>
+): string {
+  return messages
+    .map((m, i) => {
+      const ids = (m.tool_calls || [])
+        .map((tc) => tc.id || tc.function?.name || "?")
+        .join(",");
+      const parts = Array.isArray(m.content)
+        ? (m.content as Array<{ type?: string }>)
+            .map((p) => p?.type || "part")
+            .slice(0, 6)
+            .join("+")
+        : typeof m.content === "string"
+          ? `text:${Math.min(m.content.length, 9999)}`
+          : m.content == null
+            ? "empty"
+            : typeof m.content;
+      const extra = [
+        ids ? `calls=${ids}` : "",
+        m.tool_call_id ? `tid=${m.tool_call_id}` : "",
+        parts ? `c=${parts}` : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      return `${i}:${m.role || "?"}${extra ? `{${extra}}` : ""}`;
+    })
+    .join(" -> ");
+}
+
+export function conversationHasTools(
+  messages: Array<{ role?: string; tool_calls?: unknown; content?: unknown }>
+): boolean {
+  return (messages || []).some((m) => {
+    if (m.role === "tool" || m.role === "function") return true;
+    if (Array.isArray(m.tool_calls) && m.tool_calls.length) return true;
+    if (Array.isArray(m.content)) {
+      return (m.content as Array<{ type?: string }>).some((p) => {
+        const t = String(p?.type || "").replace(/_/g, "-");
+        return t === "tool-call" || t === "tool-use" || t === "tool-result" || t === "tool";
+      });
+    }
+    return false;
+  });
 }
 
 /** Expand Anthropic/OpenAI/OpenCode tool payloads and repair orphan tool results. */

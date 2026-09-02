@@ -1,6 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { normalizeConversation } from "../src/api/messages.ts";
+import {
+  conversationHasTools,
+  normalizeConversation,
+} from "../src/api/messages.ts";
 
 describe("normalizeConversation", () => {
   it("keeps OpenAI assistant tool_calls + tool results", () => {
@@ -165,5 +168,36 @@ describe("normalizeConversation", () => {
     assert.ok(bashTool);
     const bashIdx = out.indexOf(bashTool!);
     assert.equal(out[bashIdx - 1]?.tool_calls?.[0]?.id, "bash_1");
+  });
+
+  it("uses empty string content on assistant tool_calls", () => {
+    const out = normalizeConversation([
+      { role: "user", content: "go" },
+      { role: "tool", tool_call_id: "orphan_2", content: "result" },
+    ]);
+    assert.equal(out[1]?.content, "");
+    assert.equal(typeof out[1]?.content, "string");
+  });
+
+  it("detects tool history for session isolation", () => {
+    assert.equal(
+      conversationHasTools([{ role: "user", content: "hi" }]),
+      false
+    );
+    assert.equal(
+      conversationHasTools([
+        { role: "assistant", content: "", tool_calls: [{ id: "a" }] } as never,
+      ]),
+      true
+    );
+    assert.equal(
+      conversationHasTools([
+        {
+          role: "assistant",
+          content: [{ type: "tool-call", toolCallId: "x" }],
+        } as never,
+      ]),
+      true
+    );
   });
 });
