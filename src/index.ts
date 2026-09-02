@@ -22,6 +22,7 @@ export {
 export { refreshCredentials, ensureFresh } from "./auth/refresh.js";
 
 export { chat, chatStream } from "./api/chat.js";
+export { normalizeConversation } from "./api/messages.js";
 export { listModels } from "./api/models.js";
 export { getUsage, getUsageAll } from "./api/usage.js";
 export { qoderFetch, qoderFetchJson, resolveCredentials, QoderHttpError } from "./api/client.js";

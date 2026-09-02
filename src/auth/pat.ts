@@ -7,6 +7,7 @@ import {
   urls,
 } from "../config/endpoints.js";
 import { getMachineId } from "../crypto/machine-id.js";
+import { logDebug, logError, logInfo, logWarn, maskSecret } from "../log.js";
 import type { QoderCredentials, QoderMode } from "../types.js";
 
 const PAT_PREFIX = "pat";
@@ -61,7 +62,9 @@ export async function exchangeJobToken(
   pat: string,
   mode: QoderMode = resolveMode()
 ): Promise<{ jobToken: string; jobRefreshToken: string; expiresAt: number }> {
-  const res = await fetch(urls(mode).exchange, {
+  const url = urls(mode).exchange;
+  logInfo(`PAT exchange (${mode}) ${url} pat=${maskSecret(pat)}`);
+  const res = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -74,10 +77,12 @@ export async function exchangeJobToken(
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
+    logError(`PAT exchange failed (${mode}) ${res.status} ${res.statusText}: ${text.slice(0, 800)}`);
     throw new Error(
-      `PAT exchange failed (${mode}): ${res.status} ${res.statusText}. ${text.slice(0, 300)}`
+      `PAT exchange failed (${mode}): ${res.status} ${res.statusText}. ${text.slice(0, 500)}`
     );
   }
+  logDebug(`PAT exchange ok (${mode}) status=${res.status}`);
   const data = (await res.json()) as {
     token?: string;
     refresh_token?: string;
@@ -106,7 +111,11 @@ export async function fetchUserInfo(
         "Cosy-ClientType": COSY_CLIENT_TYPE,
       },
     });
-    if (!res.ok) return { userID: "", email: "", name: "" };
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      logWarn(`userinfo failed (${mode}) ${res.status} ${res.statusText}: ${text.slice(0, 400)}`);
+      return { userID: "", email: "", name: "" };
+    }
     const info = (await res.json()) as {
       id?: string;
       email?: string;
@@ -118,7 +127,8 @@ export async function fetchUserInfo(
       email: info.email || "",
       name: info.name || info.username || "",
     };
-  } catch {
+  } catch (err) {
+    logWarn(`userinfo request error (${mode}):`, err);
     return { userID: "", email: "", name: "" };
   }
 }

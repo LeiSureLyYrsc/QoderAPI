@@ -60,9 +60,16 @@ export interface ChatMessage {
 }
 
 export interface ContentPart {
-  type: "text" | "image_url";
+  type: "text" | "image_url" | "tool_use" | "tool_result" | "function" | "tool";
   text?: string;
   image_url?: { url: string };
+  id?: string;
+  name?: string;
+  input?: unknown;
+  arguments?: unknown;
+  tool_use_id?: string;
+  tool_call_id?: string;
+  content?: unknown;
 }
 
 export interface ToolCall {

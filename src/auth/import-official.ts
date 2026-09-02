@@ -5,6 +5,7 @@ import path from "node:path";
 import type { QoderCredentials, QoderMode } from "../types.js";
 import { getMachineId } from "../crypto/machine-id.js";
 import { credentialsFromPat } from "./pat.js";
+import { logInfo, logWarn } from "../log.js";
 
 export interface OfficialAuthPaths {
   mode: QoderMode;
@@ -187,8 +188,10 @@ export async function importOfficialCredentials(mode: QoderMode): Promise<Import
     const pat = findPatNearby(mode);
     if (pat) {
       const creds = await credentialsFromPat(pat, mode);
+      logInfo(`imported nearby PAT from sibling config (${mode})`);
       return { ok: true, credentials: creds, method: "nearby-pat" };
     }
+    logWarn(`official auth file not found: ${paths.userFile}`);
     return {
       ok: false,
       error: `Official auth file not found: ${paths.userFile}`,
@@ -199,8 +202,9 @@ export async function importOfficialCredentials(mode: QoderMode): Promise<Import
 
   const asJson = tryParseJsonUser(raw);
   if (asJson?.pat) {
-    const creds = await credentialsFromPat(asJson.pat, mode);
-    return { ok: true, credentials: creds, method: "json" };
+      const creds = await credentialsFromPat(asJson.pat, mode);
+      logInfo(`imported official credentials method=json (${mode})`);
+      return { ok: true, credentials: creds, method: "json" };
   }
   if (asJson?.access) {
     const creds: QoderCredentials = {
@@ -214,7 +218,8 @@ export async function importOfficialCredentials(mode: QoderMode): Promise<Import
       machineID: asJson.machineID || machineId,
       pat: asJson.pat,
     };
-    return { ok: true, credentials: creds, method: "json" };
+      logInfo(`imported official credentials method=json-access (${mode})`);
+      return { ok: true, credentials: creds, method: "json" };
   }
 
   const decrypted = tryDecryptAesGcm(raw, machineId);
@@ -251,6 +256,7 @@ export async function importOfficialCredentials(mode: QoderMode): Promise<Import
     return { ok: true, credentials: creds, method: "nearby-pat" };
   }
 
+  logWarn(`could not decrypt official credential file ${paths.userFile}`);
   return {
     ok: false,
     error:

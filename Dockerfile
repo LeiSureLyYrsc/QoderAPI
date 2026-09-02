@@ -12,28 +12,32 @@ RUN npm run build
 
 FROM node:24-alpine AS runtime
 
-RUN addgroup -S qoder && adduser -S qoder -G qoder
+RUN apk add --no-cache su-exec shadow \
+  && addgroup -S qoder \
+  && adduser -S qoder -G qoder
 
 WORKDIR /app
 
-COPY --from=builder --chown=qoder:qoder /app/dist/ ./dist/
-COPY --from=builder --chown=qoder:qoder /app/public/ ./public/
-COPY --chown=qoder:qoder package.json ./
+COPY --from=builder /app/dist/ ./dist/
+COPY --from=builder /app/public/ ./public/
+COPY package.json ./
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 
-RUN mkdir -p /home/qoder/.qoder-reserve \
-  && chown -R qoder:qoder /home/qoder/.qoder-reserve
-
-USER qoder
+RUN chmod +x /usr/local/bin/entrypoint.sh \
+  && mkdir -p /home/qoder/.qoder-reserve \
+  && chown -R qoder:qoder /home/qoder/.qoder-reserve /app
 
 ENV NODE_ENV=production \
     QODER_RESERVE_CONFIG_DIR=/home/qoder/.qoder-reserve \
     HOST=0.0.0.0 \
-    PORT=3927
+    PORT=3927 \
+    PUID=1000 \
+    PGID=1000
 
 EXPOSE 3927
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || 3927) + '/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"
 
-ENTRYPOINT ["node", "dist/cli.js"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["serve"]

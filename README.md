@@ -130,8 +130,8 @@ docker compose up -d
 ```
 
 Before starting Compose, set `GHCR_IMAGE` in `.env` to the lowercase image path for this repository, for example
-`ghcr.io/your-github-username/qoder-reserve`. Set `HOST` (default `0.0.0.0` in Compose), `PORT`, `PROXY_API_KEY` and any Qoder personal access token variables
-there as needed. The `qoder-data` volume persists the account pool at `/home/qoder/.qoder-reserve`.
+`ghcr.io/your-github-username/qoder-reserve`. Set `HOST` (default `0.0.0.0` in Compose), `PORT`, `DATA_DIR` (default `./data`), `PUID`/`PGID` (default `1000`), `PROXY_API_KEY` and any Qoder personal access token variables
+there as needed. The host directory is bind-mounted to `/home/qoder/.qoder-reserve` so `accounts.json` and `machine_id` persist on disk. Set `QODER_DEBUG=1` for full login/HTTP error logs.
 
 The service is available at `http://${HOST}:${PORT}/ui/`; its health endpoint is `/health`.
 

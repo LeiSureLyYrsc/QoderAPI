@@ -10,6 +10,7 @@ import type {
 } from "../types.js";
 import type { ModelRoute } from "../config/routing.js";
 import { accountsFilePath, authFilePath, ensureConfigDir } from "./paths.js";
+import { logError } from "../log.js";
 
 const RATE_LIMIT_MS = 60_000;
 const SESSION_TTL_MS = 60 * 60 * 1000;
@@ -129,11 +130,17 @@ function loadRaw(): PoolAccount[] {
 }
 
 function saveRaw(accounts: PoolAccount[]): void {
-  ensureConfigDir();
-  fs.writeFileSync(accountsFilePath(), JSON.stringify(accounts, null, 2), {
-    encoding: "utf8",
-    mode: 0o600,
-  });
+  const file = accountsFilePath();
+  try {
+    ensureConfigDir();
+    fs.writeFileSync(file, JSON.stringify(accounts, null, 2), {
+      encoding: "utf8",
+      mode: 0o600,
+    });
+  } catch (err) {
+    logError(`failed to write accounts file ${file}:`, err);
+    throw err;
+  }
 }
 
 function normalizeAccount(raw: unknown): PoolAccount | null {

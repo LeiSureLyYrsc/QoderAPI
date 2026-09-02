@@ -18,6 +18,7 @@ import { resolveMode, urls } from "./config/endpoints.js";
 import { startOpenAIServer } from "./openai/server.js";
 import type { GlobalTier, QoderMode } from "./types.js";
 import { importOfficialCredentials } from "./auth/import-official.js";
+import { formatErr, isDebug, logError } from "./log.js";
 
 function printHelp(): void {
   console.log(`qoder-reserve — standalone Qoder CN/Global API client (account pool)
@@ -49,6 +50,7 @@ Env:
   PORT=3927
   PROXY_API_KEY
   NO_BROWSER=1
+  QODER_DEBUG=1
 `);
 }
 
@@ -364,6 +366,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error(err instanceof Error ? err.message : err);
+  logError(formatErr(err));
+  if (isDebug() && err instanceof Error && err.stack) console.error(err.stack);
   process.exitCode = 1;
 });

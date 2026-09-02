@@ -2,7 +2,6 @@ import crypto from "node:crypto";
 import { CLIENT_PRODUCT_VERSION, urls } from "../config/endpoints.js";
 import { resolveModelRoute } from "../config/routing.js";
 import type {
-  ChatMessage,
   ChatRequest,
   ChatResult,
   ChatStreamEvent,
@@ -14,43 +13,7 @@ import type {
 } from "../types.js";
 import { qoderFetch } from "./client.js";
 import { getModelConfig, listModels } from "./models.js";
-
-function contentToText(content: ChatMessage["content"]): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .map((p) => {
-      if (typeof p === "string") return p;
-      if (p?.type === "text") return p.text || "";
-      if (p?.type === "image_url") return `[image:${p.image_url?.url || ""}]`;
-      return "";
-    })
-    .filter(Boolean)
-    .join("\n");
-}
-
-function normalizeMessages(messages: ChatMessage[]): Array<Record<string, unknown>> {
-  return messages.map((m) => {
-    if (m.role === "tool") {
-      return {
-        role: "tool",
-        tool_call_id: m.tool_call_id,
-        content: contentToText(m.content),
-      };
-    }
-    if (m.role === "assistant" && m.tool_calls?.length) {
-      return {
-        role: "assistant",
-        content: contentToText(m.content) || null,
-        tool_calls: m.tool_calls,
-      };
-    }
-    return {
-      role: m.role,
-      content: contentToText(m.content),
-    };
-  });
-}
+import { normalizeConversation } from "./messages.js";
 
 function transformTools(tools?: ToolDefinition[]): unknown[] {
   if (!tools?.length) return [];
@@ -79,7 +42,7 @@ function buildRequestBody(
   creds: QoderCredentials,
   modelConfig: { key: string; is_reasoning: boolean; max_output_tokens: number; source: string }
 ): Record<string, unknown> {
-  const normalized = normalizeMessages(req.messages);
+  const normalized = normalizeConversation(req.messages);
   const systemParts = normalized.filter((m) => m.role === "system");
   const rest = normalized.filter((m) => m.role !== "system");
   const systemText = systemParts.map((m) => String(m.content || "")).join("\n");

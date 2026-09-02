@@ -4,6 +4,7 @@ import { USER_AGENT, isCn, resolveMode, urls } from "../config/endpoints.js";
 import { getMachineId } from "../crypto/machine-id.js";
 import type { LoginOptions, QoderCredentials, QoderMode } from "../types.js";
 import { fetchUserInfo } from "./pat.js";
+import { logError, logInfo } from "../log.js";
 
 function generatePKCE(): { codeVerifier: string; codeChallenge: string } {
   const codeVerifier = crypto.randomBytes(32).toString("base64url");
@@ -65,6 +66,7 @@ export async function runDeviceFlow(
 
   const verificationURI = `${u.deviceWeb}?challenge=${encodeURIComponent(codeChallenge)}&challenge_method=S256&machine_id=${encodeURIComponent(machineID)}&nonce=${encodeURIComponent(nonce)}`;
 
+  logInfo(`device login (${mode}) open ${verificationURI}`);
   options.onProgress?.("Complete login in your browser...");
   options.onAuthUrl?.(verificationURI);
 
@@ -88,10 +90,18 @@ export async function runDeviceFlow(
       signal: options.signal,
     });
 
-    if (response.status === 202 || response.status === 404) continue;
+    if (response.status === 202 || response.status === 404) {
+      if (attempt === 0 || (attempt + 1) % 10 === 0) {
+        logInfo(`device poll (${mode}) attempt=${attempt + 1} status=${response.status} waiting`);
+      }
+      continue;
+    }
 
     if (!response.ok) {
       const errText = await response.text().catch(() => "");
+      logError(
+        `device poll failed (${mode}) ${response.status} ${response.statusText}: ${errText.slice(0, 800)}`
+      );
       // CN device endpoint may not exist
       if (isCn(mode) && (response.status === 404 || response.status === 501)) {
         throw new Error(
@@ -99,7 +109,7 @@ export async function runDeviceFlow(
         );
       }
       throw new Error(
-        `Device token poll failed: ${response.status} ${response.statusText}. ${errText.slice(0, 200)}`
+        `Device token poll failed: ${response.status} ${response.statusText}. ${errText.slice(0, 500)}`
       );
     }
 
@@ -130,5 +140,6 @@ export async function runDeviceFlow(
     };
   }
 
+  logError(`device login timed out (${mode}) after ${maxAttempts} polls`);
   throw new Error("Authorization timed out");
 }
