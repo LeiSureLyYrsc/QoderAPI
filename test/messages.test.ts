@@ -74,4 +74,96 @@ describe("normalizeConversation", () => {
     assert.equal(out[1]?.role, "tool");
     assert.equal(out[1]?.tool_call_id, "x");
   });
+
+  it("expands OpenCode tool-call / tool-result parts", () => {
+    const out = normalizeConversation([
+      { role: "user", content: "search" },
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "looking up" },
+          {
+            type: "tool-call",
+            toolCallId: "webfetch_1",
+            toolName: "webfetch",
+            input: { url: "https://github.com/LeiSureLyYrsc" },
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "webfetch_1",
+            toolName: "webfetch",
+            output: { type: "text", value: "profile html" },
+          },
+        ],
+      },
+    ] as never);
+    assert.equal(out[1]?.role, "assistant");
+    assert.equal(out[1]?.tool_calls?.[0]?.id, "webfetch_1");
+    assert.equal(out[1]?.tool_calls?.[0]?.function.name, "webfetch");
+    assert.equal(out[2]?.role, "tool");
+    assert.equal(out[2]?.tool_call_id, "webfetch_1");
+    assert.match(String(out[2]?.content), /profile html/);
+  });
+
+  it("inserts tool_calls before a later tool group after a reminder assistant", () => {
+    const out = normalizeConversation([
+      { role: "user", content: "搜索LeiSureLyYrsc是谁" },
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "searching" },
+          {
+            type: "tool-call",
+            toolCallId: "webfetch_1",
+            toolName: "webfetch",
+            input: { url: "https://github.com/LeiSureLyYrsc" },
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "webfetch_1",
+            output: "github html",
+          },
+        ],
+      },
+      {
+        role: "assistant",
+        content: "<system-reminder>Plan mode is still active.</system-reminder>",
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "bash_1",
+            toolName: "bash",
+            output: '{"login":"LeiSureLyYrsc"}',
+          },
+        ],
+      },
+    ] as never);
+
+    for (let i = 0; i < out.length; i++) {
+      if (out[i]?.role === "tool") {
+        const prev = out[i - 1];
+        assert.equal(prev?.role, "assistant");
+        assert.ok(prev?.tool_calls?.length);
+      }
+    }
+    const bashTool = out.find(
+      (m) => m.role === "tool" && m.tool_call_id === "bash_1"
+    );
+    assert.ok(bashTool);
+    const bashIdx = out.indexOf(bashTool!);
+    assert.equal(out[bashIdx - 1]?.tool_calls?.[0]?.id, "bash_1");
+  });
 });

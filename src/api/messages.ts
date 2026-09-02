@@ -14,11 +14,16 @@ type LoosePart = {
   image_url?: { url?: string };
   id?: string;
   name?: string;
+  toolName?: string;
   input?: unknown;
   arguments?: unknown;
+  output?: unknown;
+  result?: unknown;
+  value?: unknown;
   tool_use_id?: string;
   tool_call_id?: string;
   toolCallId?: string;
+  toolUseId?: string;
   content?: unknown;
 };
 
@@ -38,8 +43,13 @@ function asText(value: unknown): string {
         if (typeof p === "string") return p;
         if (p && typeof p === "object") {
           const rec = p as LoosePart;
-          if (rec.type === "text") return rec.text || "";
+          const type = String(rec.type || "").replace(/_/g, "-");
+          if (type === "text" || type === "reasoning" || type === "thinking") {
+            return rec.text || "";
+          }
           if (typeof rec.text === "string") return rec.text;
+          if (rec.output != null) return asText(rec.output);
+          if (rec.result != null) return asText(rec.result);
           if (rec.content != null) return asText(rec.content);
         }
         return "";
@@ -48,6 +58,10 @@ function asText(value: unknown): string {
       .join("\n");
   }
   if (typeof value === "object") {
+    const rec = value as Record<string, unknown>;
+    if (typeof rec.output === "string") return rec.output;
+    if (typeof rec.text === "string") return rec.text;
+    if (rec.value != null) return asText(rec.value);
     try {
       return JSON.stringify(value);
     } catch {
@@ -67,15 +81,32 @@ function stringifyArgs(value: unknown): string {
   }
 }
 
+function partType(p: LoosePart | string | undefined): string {
+  if (!p || typeof p === "string") return "";
+  return String(p.type || "")
+    .trim()
+    .replace(/_/g, "-")
+    .toLowerCase();
+}
+
 function toolCallIdOf(m: LooseMessage | LoosePart): string | undefined {
   const rec = m as Record<string, unknown>;
   const id =
-    rec.tool_call_id ||
     rec.toolCallId ||
+    rec.tool_call_id ||
     rec.tool_use_id ||
     rec.toolUseId ||
     rec.id;
   return typeof id === "string" && id.trim() ? String(id) : undefined;
+}
+
+function toolResultText(p: LoosePart): string {
+  if (p.output != null) return asText(p.output);
+  if (p.result != null) return asText(p.result);
+  if (p.value != null) return asText(p.value);
+  if (p.content != null) return asText(p.content);
+  if (p.text) return p.text;
+  return "";
 }
 
 function toToolCall(raw: unknown, index: number): ToolCall | null {
@@ -85,9 +116,11 @@ function toToolCall(raw: unknown, index: number): ToolCall | null {
     rec.function && typeof rec.function === "object"
       ? (rec.function as Record<string, unknown>)
       : rec;
-  const name = String(fn.name || rec.name || "unknown");
+  const name = String(fn.name || rec.name || rec.toolName || "unknown");
   const args = stringifyArgs(fn.arguments ?? rec.arguments ?? rec.input);
-  const id = String(rec.id || fn.id || `call_${index}`);
+  const id = String(
+    rec.toolCallId || rec.tool_call_id || rec.id || fn.id || `call_${index}`
+  );
   return {
     id,
     type: "function",
@@ -110,27 +143,37 @@ function expandOne(m: LooseMessage): UpstreamMessage[] {
         texts.push(p);
         continue;
       }
-      const type = String(p?.type || "");
-      if (type === "text") {
+      const type = partType(p);
+      if (type === "text" || type === "reasoning" || type === "thinking") {
         if (p.text) texts.push(p.text);
-      } else if (type === "image_url") {
+      } else if (type === "image-url" || type === "image_url") {
         texts.push(`[image:${p.image_url?.url || ""}]`);
-      } else if (type === "tool_use" || type === "function") {
+      } else if (
+        type === "tool-use" ||
+        type === "tool-call" ||
+        type === "function"
+      ) {
         const tc = toToolCall(
           {
             id: p.id,
-            name: p.name,
+            toolCallId: p.toolCallId,
+            tool_call_id: p.tool_call_id,
+            name: p.name || p.toolName,
             arguments: p.arguments ?? p.input,
-            function: { name: p.name, arguments: p.arguments ?? p.input },
+            function: {
+              name: p.name || p.toolName,
+              arguments: p.arguments ?? p.input,
+            },
           },
           idx++
         );
         if (tc) toolCalls.push(tc);
-      } else if (type === "tool_result" || type === "tool") {
+      } else if (type === "tool-result" || type === "tool") {
         toolResults.push({
           role: "tool",
-          tool_call_id: toolCallIdOf(p) || p.tool_use_id || p.tool_call_id,
-          content: asText(p.content ?? p.text),
+          tool_call_id: toolCallIdOf(p),
+          content: toolResultText(p),
+          name: p.name || p.toolName,
         });
       } else if (p?.text) {
         texts.push(p.text);
@@ -204,11 +247,19 @@ function expandOne(m: LooseMessage): UpstreamMessage[] {
   return out;
 }
 
-function lastAssistant(out: UpstreamMessage[]): UpstreamMessage | undefined {
-  for (let i = out.length - 1; i >= 0; i--) {
-    if (out[i]!.role === "assistant") return out[i];
-  }
-  return undefined;
+function immediatelyPrecedingAssistant(
+  out: UpstreamMessage[]
+): UpstreamMessage | undefined {
+  const prev = out[out.length - 1];
+  return prev?.role === "assistant" ? prev : undefined;
+}
+
+function synthToolCalls(group: UpstreamMessage[]): ToolCall[] {
+  return group.map((g, idx) => ({
+    id: String(g.tool_call_id || `call_synth_${idx}`),
+    type: "function" as const,
+    function: { name: g.name || "unknown", arguments: "{}" },
+  }));
 }
 
 function repairToolSequence(messages: UpstreamMessage[]): UpstreamMessage[] {
@@ -228,36 +279,25 @@ function repairToolSequence(messages: UpstreamMessage[]): UpstreamMessage[] {
       i += 1;
     }
 
-    const prev = lastAssistant(out);
-    const prevIds = new Set((prev?.tool_calls || []).map((tc) => tc.id));
     for (const item of group) {
       if (!item.tool_call_id) {
         item.tool_call_id = `call_synth_${out.length}_${group.indexOf(item)}`;
       }
     }
 
+    const prev = immediatelyPrecedingAssistant(out);
+    const prevIds = new Set((prev?.tool_calls || []).map((tc) => tc.id));
+    const adjacentWithCalls = Boolean(prev?.tool_calls?.length);
     const missing = group.filter((g) => !prevIds.has(String(g.tool_call_id)));
-    const needsSynth = !prev || missing.length === group.length;
 
-    if (needsSynth) {
+    if (!adjacentWithCalls) {
       out.push({
         role: "assistant",
         content: null,
-        tool_calls: group.map((g, idx) => ({
-          id: String(g.tool_call_id || `call_synth_${idx}`),
-          type: "function" as const,
-          function: { name: g.name || "unknown", arguments: "{}" },
-        })),
+        tool_calls: synthToolCalls(group),
       });
     } else if (missing.length && prev) {
-      prev.tool_calls = [
-        ...(prev.tool_calls || []),
-        ...missing.map((g, idx) => ({
-          id: String(g.tool_call_id || `call_synth_${idx}`),
-          type: "function" as const,
-          function: { name: g.name || "unknown", arguments: "{}" },
-        })),
-      ];
+      prev.tool_calls = [...(prev.tool_calls || []), ...synthToolCalls(missing)];
     }
 
     for (const g of group) {
@@ -276,11 +316,23 @@ export function contentToText(content: ChatMessage["content"]): string {
   return asText(content);
 }
 
-/** Expand Anthropic/OpenAI tool payloads and repair orphan tool results. */
+function assertToolFollowsCalls(messages: UpstreamMessage[]): void {
+  for (let i = 0; i < messages.length; i++) {
+    if (messages[i]!.role !== "tool") continue;
+    const prev = messages[i - 1];
+    if (!prev || prev.role !== "assistant" || !prev.tool_calls?.length) {
+      throw new Error("internal: tool message is not adjacent to assistant tool_calls");
+    }
+  }
+}
+
+/** Expand Anthropic/OpenAI/OpenCode tool payloads and repair orphan tool results. */
 export function normalizeConversation(messages: ChatMessage[]): UpstreamMessage[] {
   const expanded: UpstreamMessage[] = [];
   for (const m of messages || []) {
     expanded.push(...expandOne(m as LooseMessage));
   }
-  return repairToolSequence(expanded);
+  const repaired = repairToolSequence(expanded);
+  assertToolFollowsCalls(repaired);
+  return repaired;
 }
